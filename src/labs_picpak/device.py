@@ -20,6 +20,10 @@ CMD_GAP = 0.3  # seconds between commands; the frame drops back-to-back requests
 UPLOAD_SETTLE = 3.0  # seconds for the frame to verify, store and refresh the panel
 
 
+class FrameNotFound(RuntimeError):
+    """The frame is not advertising (asleep, out of range, or connected to the phone app)."""
+
+
 @dataclass(frozen=True)
 class Found:
     address: str  # a per-Mac UUID on macOS, a MAC address on Linux
@@ -41,12 +45,26 @@ async def scan(timeout: float = 8.0) -> list[Found]:
 class PicPak:
     """Use as ``async with PicPak(address) as frame: ...``."""
 
-    def __init__(self, address: str, timeout: float = 15.0):
+    def __init__(self, address: str, timeout: float = 15.0, scan_timeout: float = 12.0):
         self.address = address
-        self._client = BleakClient(address, timeout=timeout)
+        self._timeout = timeout
+        self._scan_timeout = scan_timeout
+        self._bleak: BleakClient | None = None
         self._queues: dict[int, asyncio.Queue[bytes]] = defaultdict(asyncio.Queue)
 
+    @property
+    def _client(self) -> BleakClient:
+        if self._bleak is None:
+            raise RuntimeError("not connected: use `async with PicPak(...)`")
+        return self._bleak
+
     async def __aenter__(self) -> PicPak:
+        # CoreBluetooth only connects to a device seen by a scan in this process, and the
+        # frame stops advertising when it sleeps, so look for it first and say so if it is not there.
+        found = await BleakScanner.find_device_by_address(self.address, timeout=self._scan_timeout)
+        if found is None:
+            raise FrameNotFound(f"{self.address} is not advertising: wake the frame (press its button) and retry")
+        self._bleak = BleakClient(found, timeout=self._timeout)
         await self._client.connect()
         await self._client.start_notify(p.FF01_DATA, self._on_indication)
         await self._client.start_notify(p.FF02_CTRL, self._on_indication)

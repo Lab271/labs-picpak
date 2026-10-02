@@ -10,7 +10,7 @@ from pathlib import Path
 
 from . import __version__, config
 from . import image as img
-from .device import PicPak, scan
+from .device import FrameNotFound, PicPak, scan
 
 
 def _frame(args: argparse.Namespace) -> PicPak:
@@ -48,7 +48,7 @@ async def cmd_list(args: argparse.Namespace) -> None:
 
 
 async def cmd_push(args: argparse.Namespace) -> None:
-    packed, preview = img.encode(args.image, args.fit)
+    packed, preview = img.encode(args.image, args.fit, not args.no_dither)
     async with _frame(args) as frame:
         slot = args.slot or await frame.first_free_slot()
         await frame.upload(slot, packed)
@@ -75,7 +75,7 @@ async def cmd_identify(args: argparse.Namespace) -> None:
 
 
 def cmd_preview(args: argparse.Namespace) -> None:
-    _, preview = img.encode(args.image, args.fit)
+    _, preview = img.encode(args.image, args.fit, not args.no_dither)
     out = args.out or str(Path(args.image).with_suffix(".picpak.png"))
     preview.save(out)
     print(f"preview written to {out}")
@@ -114,6 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("image")
     s.add_argument("--slot", type=int, help="slot 1..500 (default: first free slot)")
     s.add_argument("--fit", choices=["cover", "contain"], default="cover")
+    s.add_argument("--no-dither", action="store_true", help="nearest colour, no dithering (flat graphics)")
     s.add_argument("--save-preview", metavar="PNG", help="also save what the frame will show")
     s.set_defaults(func=cmd_push)
 
@@ -128,6 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("preview", help="render an image as the frame would show it (no Bluetooth)")
     s.add_argument("image")
     s.add_argument("--fit", choices=["cover", "contain"], default="cover")
+    s.add_argument("--no-dither", action="store_true", help="nearest colour, no dithering (flat graphics)")
     s.add_argument("--out")
     s.set_defaults(func=cmd_preview)
 
@@ -147,6 +149,8 @@ def main(argv: list[str] | None = None) -> None:
             asyncio.run(result)
         except TimeoutError as e:
             sys.exit(f"timeout: {e or 'no response from the frame'}")
+        except FrameNotFound as e:
+            sys.exit(str(e))
 
 
 if __name__ == "__main__":

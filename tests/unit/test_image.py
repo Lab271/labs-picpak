@@ -41,3 +41,10 @@ def test_encode_file(tmp_path):
     assert len(packed) == 30_000
     assert preview.size == (img.W, img.H)
     assert preview.getpixel((10, 10)) == (255, 255, 0)
+
+
+def test_nearest_maps_dark_navy_to_black_and_orange_to_yellow():
+    im = Image.new("RGB", (img.W, img.H), (2, 12, 23))
+    im.paste((255, 141, 51), (0, 0, 10, 10))
+    idx = img.nearest(im)
+    assert idx[50, 50] == 0 and idx[5, 5] == 2

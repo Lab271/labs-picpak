@@ -53,9 +53,19 @@ class FakeFrame:
             self.slots[data[2] | (data[3] << 8)] = img
 
 
+class FakeScanner:
+    visible = True
+
+    @staticmethod
+    async def find_device_by_address(address, timeout=None):
+        return address if FakeScanner.visible else None
+
+
 @pytest.fixture
 def fake(monkeypatch):
     monkeypatch.setattr(device, "BleakClient", FakeFrame)
+    monkeypatch.setattr(device, "BleakScanner", FakeScanner)
+    FakeScanner.visible = True
     monkeypatch.setattr(device, "CMD_GAP", 0)
     monkeypatch.setattr(device, "UPLOAD_SETTLE", 0)
 
@@ -74,3 +84,14 @@ def test_info_slots_upload_delete(fake):
             assert await frame.delete(9) is False
 
     asyncio.run(run())
+
+
+def test_sleeping_frame_gives_a_clear_error(fake):
+    FakeScanner.visible = False
+
+    async def run():
+        async with device.PicPak("ADDR"):
+            pass
+
+    with pytest.raises(device.FrameNotFound, match="wake the frame"):
+        asyncio.run(run())

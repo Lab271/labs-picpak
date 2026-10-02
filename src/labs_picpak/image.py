@@ -54,6 +54,13 @@ def dither(img: Image.Image) -> np.ndarray:
     return out
 
 
+def nearest(img: Image.Image) -> np.ndarray:
+    """Map every pixel to the nearest palette colour, no dithering. Cleaner for flat graphics."""
+    px = np.asarray(img.convert("RGB"), dtype=np.float32)
+    dist = ((px[:, :, None, :] - PALETTE[None, None, :, :]) ** 2).sum(axis=3)
+    return dist.argmin(axis=2).astype(np.uint8)
+
+
 def pack(indices: np.ndarray) -> bytes:
     """Pack palette indices 4 pixels per byte, MSB first, after the vertical flip."""
     if indices.shape != (H, W):
@@ -75,9 +82,10 @@ def to_image(indices: np.ndarray) -> Image.Image:
     return Image.fromarray(PALETTE.astype(np.uint8)[indices], "RGB")
 
 
-def encode(path: str | Path, mode: str = "cover") -> tuple[bytes, Image.Image]:
+def encode(path: str | Path, mode: str = "cover", use_dither: bool = True) -> tuple[bytes, Image.Image]:
     """File -> (30,000 packed bytes, preview image)."""
-    idx = dither(fit(Image.open(path), mode))
+    fitted = fit(Image.open(path), mode)
+    idx = dither(fitted) if use_dither else nearest(fitted)
     return pack(idx), to_image(idx)
 
 
