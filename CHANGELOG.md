@@ -16,5 +16,5 @@
   "wake the frame" when it is asleep, instead of a bleak stack trace.
 
 ### Verified on hardware
-- `scan` and `info` work on a frame with firmware **V1.1.20** (hardware V0.0.1), newer than the documented
+- `scan`, `info` and `push` work on a frame with firmware **V1.1.20** (hardware V0.0.1), newer than the documented
   V0.4.1. The frame reports a serial.
