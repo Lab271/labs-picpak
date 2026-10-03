@@ -47,6 +47,19 @@ class FakeFrame:
             self._send(char, bytes([0xAA, 0x32, data[2], data[3], 0 if ok else 1, 0xFF]))
         elif op == p.OP_DATA:
             self.chunks.append(bytes(data[8:-1]))
+        elif op == p.OP_READ:
+            slot = data[2] | (data[3] << 8)
+            img = self.slots[slot]
+            parts = [img[i : i + 236] for i in range(0, len(img), 236)]
+            for n, part in enumerate(parts):
+                last = 1 if n == len(parts) - 1 else 0
+                self._send(char, bytes([0xAA, 0x02, data[2], data[3], n, last, len(part), 0]) + part + b"\xff")
+        elif op == p.OP_MD5 and len(data) == 6:
+            slot = data[2] | (data[3] << 8)
+            # a late reply for another slot first, then the right one
+            self._send(char, bytes([0xAA, 0x04, 99, 0, 0x02]) + bytes(16) + b"\xff")
+            md5 = hashlib.md5(self.slots[slot]).digest()
+            self._send(char, bytes([0xAA, 0x04, data[2], data[3], 0x02]) + md5 + b"\xff")
         elif op == p.OP_MD5 and len(data) == 22:
             img = b"".join(self.chunks)
             assert data[5:21] == hashlib.md5(img).digest()
@@ -80,6 +93,8 @@ def test_info_slots_upload_delete(fake):
             await frame.upload(free, bytes(30_000))
             client = frame._client
             assert client.slots[2] == bytes(30_000)
+            assert await frame.read_md5(2) == hashlib.md5(bytes(30_000)).hexdigest()
+            assert await frame.read_image(2) == bytes(30_000)
             assert await frame.delete(1) is True
             assert await frame.delete(9) is False
 

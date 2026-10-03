@@ -65,3 +65,12 @@ def test_parse_list_and_delete():
 def test_wrong_opcode_rejected():
     with pytest.raises(p.ProtocolError):
         p.parse_name(bytes.fromhex("aa0801ff"))
+
+
+def test_read_commands_and_parsers():
+    assert p.cmd_read(3) == bytes.fromhex("aa030300ff")
+    md5 = bytes(range(16))
+    slot, got = p.parse_md5(bytes([0xAA, 0x04, 7, 0, 0x02]) + md5 + bytes([0xFF]))
+    assert (slot, got) == (7, md5)
+    c = p.parse_chunk(bytes([0xAA, 0x02, 4, 0, 9, 1, 3, 0, 1, 2, 3, 0xFF]))
+    assert (c.slot, c.number, c.last, c.payload) == (4, 9, True, b"\x01\x02\x03")

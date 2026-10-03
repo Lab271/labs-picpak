@@ -3,13 +3,54 @@ FRAME ?=
 F = $(if $(FRAME),-f $(FRAME),)
 
 .DEFAULT_GOAL := help
-.PHONY: help dev test lint format type check scan frames info list push delete identify clean
+.PHONY: help scan frames info list push delete pull identify dashboard export import \
+        dev test lint format type check clean
 
-help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[32m%-10s\033[0m %s\n", $$1, $$2}'
+##@ Operations (wake the frame first; FRAME=name when you have more than one)
+
+scan: ## Find frames in range
+	$(UV) run picpak scan
+
+frames: ## Named frames and where the state lives
+	$(UV) run picpak frames
+
+info: ## Battery, firmware, serial, image count
+	$(UV) run picpak info $(F)
+
+list: ## Slots with source, date and status (MD5-checked)
+	$(UV) run picpak list $(F)
+
+push: ## Send an image: IMG=photo.jpg [ARGS=--no-dither]
+	@test -n "$(IMG)" || { echo "usage: make push IMG=path [FRAME=name] [ARGS=...]"; exit 1; }
+	$(UV) run picpak push "$(IMG)" $(F) $(ARGS)
+
+delete: ## Delete a slot on the frame and its record: SLOT=n
+	@test -n "$(SLOT)" || { echo "usage: make delete SLOT=n [FRAME=name]"; exit 1; }
+	$(UV) run picpak delete $(SLOT) $(F)
+
+pull: ## Download a stored image as preview (30-60 s): SLOT=n
+	@test -n "$(SLOT)" || { echo "usage: make pull SLOT=n [FRAME=name]"; exit 1; }
+	$(UV) run picpak pull $(SLOT) $(F)
+
+identify: ## Show the frame's name on its screen
+	$(UV) run picpak identify $(F)
+
+dashboard: ## Write and open the HTML overview of all frames
+	$(UV) run picpak dashboard
+
+export: ## Save names, records and previews for another machine: FILE=picpak.zip
+	$(UV) run picpak export "$(or $(FILE),picpak-export.zip)"
+
+import: ## Load an export (merge): FILE=picpak.zip [ARGS=--replace]
+	@test -n "$(FILE)" || { echo "usage: make import FILE=path [ARGS=--replace]"; exit 1; }
+	$(UV) run picpak import "$(FILE)" $(ARGS)
+
+##@ Build
 
 dev: ## Install the package and dev tools into .venv
 	$(UV) sync
+
+check: lint type test ## Lint, type-check and test
 
 test: ## Run the unit tests with coverage
 	$(UV) run pytest --cov=labs_picpak --cov-report=term-missing
@@ -24,30 +65,12 @@ format: ## Format with ruff
 type: ## Type-check with pyright
 	$(UV) run pyright
 
-check: lint type test ## Lint, type-check and test
+##@ Support
 
-scan: ## Find PicPak frames in range (wake the frame first)
-	$(UV) run picpak scan
-
-frames: ## Show named frames
-	$(UV) run picpak frames
-
-info: ## Battery, firmware, serial, image count [FRAME=name]
-	$(UV) run picpak info $(F)
-
-list: ## Occupied image slots [FRAME=name]
-	$(UV) run picpak list $(F)
-
-push: ## Send an image: make push IMG=photo.jpg [FRAME=name] [ARGS=--no-dither]
-	@test -n "$(IMG)" || { echo "usage: make push IMG=path [FRAME=name] [ARGS=...]"; exit 1; }
-	$(UV) run picpak push "$(IMG)" $(F) $(ARGS)
-
-delete: ## Delete one slot: make delete SLOT=1 [FRAME=name]
-	@test -n "$(SLOT)" || { echo "usage: make delete SLOT=n [FRAME=name]"; exit 1; }
-	$(UV) run picpak delete $(SLOT) $(F)
-
-identify: ## Show the frame's name on its screen [FRAME=name]
-	$(UV) run picpak identify $(F)
+help: ## Show this help
+	@awk 'BEGIN {FS = ":.*?## "} \
+	  /^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} \
+	  /^[a-zA-Z_-]+:.*?## / {printf "  \033[32m%-10s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 clean: ## Remove caches and build output
 	rm -rf .pytest_cache .ruff_cache .coverage build dist

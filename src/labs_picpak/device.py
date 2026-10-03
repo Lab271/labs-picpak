@@ -100,7 +100,7 @@ class PicPak:
         deadline = asyncio.get_running_loop().time() + 5.0
         while True:
             for op, q in self._queues.items():
-                if op not in (p.OP_INFO, p.OP_NAME, p.OP_STATUS) and not q.empty():
+                if op not in (p.OP_INFO, p.OP_NAME, p.OP_STATUS, p.OP_DATA, 0x02, p.OP_MD5) and not q.empty():
                     frame = q.get_nowait()
                     if len(frame) > 10:
                         await asyncio.sleep(CMD_GAP)
@@ -119,6 +119,48 @@ class PicPak:
             await self._client.write_gatt_char(p.FF01_DATA, pkt, response=True)
         await self._client.write_gatt_char(p.FF01_DATA, p.md5_commit(slot, packed), response=True)
         await asyncio.sleep(UPLOAD_SETTLE)
+
+    async def read_md5(self, slot: int) -> str:
+        """The MD5 the frame stores for a slot (hex). Fast: no image transfer."""
+        q = self._queues[p.OP_MD5]
+        while not q.empty():
+            q.get_nowait()
+        await self._client.write_gatt_char(p.FF01_DATA, p.cmd_read_md5(slot), response=True)
+        deadline = asyncio.get_running_loop().time() + 8.0
+        try:
+            while True:
+                left = deadline - asyncio.get_running_loop().time()
+                if left <= 0:
+                    raise TimeoutError(f"no MD5 for slot {slot}")
+                got, md5 = p.parse_md5(await asyncio.wait_for(q.get(), left))
+                if got == slot:  # replies can arrive late for an earlier slot
+                    return md5.hex()
+        finally:
+            await asyncio.sleep(CMD_GAP)
+
+    async def read_image(self, slot: int, timeout: float = 120.0) -> bytes:
+        """Download a stored image (packed 2 bpp). Slow: 30-60 s per image."""
+        for op in (p.OP_DATA, 0x02):
+            q = self._queues[op]
+            while not q.empty():
+                q.get_nowait()
+        await self._client.write_gatt_char(p.FF01_DATA, p.cmd_read(slot), response=True)
+        parts: dict[int, bytes] = {}
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            for op in (p.OP_DATA, 0x02):
+                q = self._queues[op]
+                while not q.empty():
+                    chunk = p.parse_chunk(q.get_nowait())
+                    if chunk.slot == slot:
+                        parts[chunk.number] = chunk.payload
+                        if chunk.last:
+                            await asyncio.sleep(CMD_GAP)
+                            return b"".join(parts[k] for k in sorted(parts))
+            if loop.time() > deadline:
+                raise TimeoutError(f"slot {slot}: got {len(parts)} chunks, then the frame stopped sending")
+            await asyncio.sleep(0.05)
 
     async def first_free_slot(self) -> int:
         used = set(await self.slots())

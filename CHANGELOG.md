@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- State database in the XDG data directory: every `push`, `identify` and `pull` is recorded with source,
+  MD5, fit, dither and time, plus a preview PNG.
+- `list` shows slot, status, date and source; status comes from each slot's MD5 on the frame
+  (ok / changed / unknown / gone). `--fast` skips the MD5 check.
+- `pull SLOT`: download a stored image as a preview (for images not pushed by picpak).
+- `dashboard`: static HTML overview of all frames and slots, opened in the browser.
+- `export FILE` / `import FILE [--replace]`: move frame names, records and previews to another machine.
+- `delete` also forgets the record; `--local-only` forgets the record without touching the frame.
+- `info` stores battery, firmware and serial for the dashboard.
+- Make targets for all frame operations, and `make help` grouped into Operations, Build and Support.
+
+### Fixed
+- `list` no longer mistakes the image packets the frame streams back after an upload for the slot list.
+
 ## [0.1.0] - 2026-10-02
 
 ### Added

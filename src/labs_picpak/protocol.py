@@ -67,6 +67,10 @@ def cmd_delete(slot: int) -> bytes:
     return bytes([SOF, OP_DELETE]) + _slot(slot) + bytes([EOF])
 
 
+def cmd_read(slot: int) -> bytes:
+    return bytes([SOF, OP_READ]) + _slot(slot) + bytes([EOF])
+
+
 def cmd_read_md5(slot: int) -> bytes:
     return bytes([SOF, OP_MD5]) + _slot(slot) + bytes([0x02, EOF])
 
@@ -131,3 +135,25 @@ def parse_delete(frame: bytes | bytearray) -> tuple[int, bool]:
     """(slot, success) from a delete response."""
     _check(frame, OP_DELETE, min_len=6)
     return frame[2] | (frame[3] << 8), frame[4] == 0x00
+
+
+def parse_md5(frame: bytes | bytearray) -> tuple[int, bytes]:
+    """(slot, 16-byte MD5) from a read-MD5 response."""
+    _check(frame, OP_MD5, min_len=22)
+    return frame[2] | (frame[3] << 8), bytes(frame[5:21])
+
+
+@dataclass(frozen=True)
+class Chunk:
+    slot: int
+    number: int
+    last: bool
+    payload: bytes
+
+
+def parse_chunk(frame: bytes | bytearray) -> Chunk:
+    """An image data packet (upload shape, also used when the frame streams an image back)."""
+    if len(frame) < 9 or frame[0] != SOF or frame[-1] != EOF:
+        raise ProtocolError(f"bad data packet: {bytes(frame[:8]).hex(' ')}…")
+    n = frame[6] | (frame[7] << 8)
+    return Chunk(frame[2] | (frame[3] << 8), frame[4], frame[5] == 0x01, bytes(frame[8 : 8 + n]))

@@ -27,21 +27,43 @@ On macOS, allow Bluetooth for your terminal app the first time (System Settings 
 
 ## Use
 
+Wake the frame (press its button) before each command; it stops advertising when it sleeps.
+`make help` groups the targets into Operations, Build and Support.
+
 ```bash
-picpak scan                         # wake the frame first; lists frames in range
-picpak name 8E1F2C3A-… kitchen      # remember a frame under a name
-picpak identify -f kitchen          # shows "kitchen" on that frame, to check which one is which
-picpak info -f kitchen              # battery, firmware, serial, image count
-picpak preview photo.jpg            # photo.picpak.png: what the frame will show (no Bluetooth)
-picpak push photo.jpg -f kitchen    # dither, upload to the first free slot
-picpak push logo.png -f desk --fit contain --slot 12
-picpak list -f desk                 # occupied slots
-picpak delete 12 -f desk
+make scan                           # frames in range
+uv run picpak name 8E1F2C3A-… kitchen
+make identify FRAME=kitchen         # shows "kitchen" on that frame
+make info                           # battery, firmware, serial, image count
+make list                           # slot · status · date · source, MD5-checked against the records
+make push IMG=photo.jpg             # dither, upload to the first free slot, record it
+make push IMG=logo.png ARGS="--no-dither --fit contain"
+make pull SLOT=1                    # download an unknown image as a preview (30-60 s)
+make delete SLOT=1                  # delete on the frame and forget the record
+make dashboard                      # HTML overview of all frames and slots
+make export FILE=picpak.zip         # move the state to another machine…
+make import FILE=picpak.zip         # …and load it there (merge; ARGS=--replace to overwrite)
 ```
 
-Every frame advertises the name `PicPak`, and the serial number can be empty. So frames are remembered by
-their Bluetooth address in `~/.config/picpak/frames.toml`. On macOS that address is a UUID that is stable on
-one Mac but different on another Mac, so the file is per machine and not part of this repo.
+With one named frame `FRAME=` can be left out. `uv run picpak --help` lists every option.
+
+## State (XDG)
+
+The frame stores pixels and an MD5 per slot, nothing else. picpak keeps the rest:
+
+| Where | What |
+|---|---|
+| `$XDG_CONFIG_HOME/picpak/frames.toml` (`~/.config/…`) | frame names → Bluetooth addresses |
+| `$XDG_DATA_HOME/picpak/library.json` (`~/.local/share/…`) | per frame and slot: source file, MD5, fit, dither, when; last seen battery and firmware |
+| `$XDG_DATA_HOME/picpak/previews/<frame>/<slot>.png` | what the frame shows |
+| `$XDG_DATA_HOME/picpak/dashboard.html` | generated overview |
+
+`list` compares each slot's MD5 on the frame with the record: **ok** (matches), **changed** (another image
+is there), **unknown** (not pushed by picpak: `pull` it to see it), **gone** (recorded, no longer on the frame).
+
+Every frame advertises the name `PicPak`, so frames are remembered by Bluetooth address. On macOS that
+address is a UUID that differs per Mac: after `import` on another machine, wake each frame, `scan`, and
+`name` it again. Records and previews follow the name, so nothing else changes.
 
 ## How it works
 
@@ -51,6 +73,8 @@ one Mac but different on another Mac, so the file is per machine and not part of
 | `image.py` | Fit to 400 × 300, Floyd-Steinberg dither to the four colours, pack 2 bits per pixel, flip vertically (the panel scans bottom to top). |
 | `device.py` | Async Bluetooth client on [bleak](https://github.com/hbldh/bleak): connect, subscribe to indications, request/response. |
 | `config.py` | Frame names ↔ addresses. |
+| `library.py` | The state database: records, previews, reconcile with the frame, export/import. |
+| `dashboard.py` | The static HTML overview. |
 | `cli.py` | The `picpak` command. |
 
 ## Open questions
