@@ -5,7 +5,9 @@ The Lab271 PicPak drive: control [PicPak](https://www.picpak.tech) colour e-ink 
 > **Unofficial.** Lab271 is not affiliated with the maker of PicPak. This tool is built on a
 > reverse-engineered description of the Bluetooth protocol (firmware V0.4.1) by Andy Copley:
 > <https://gist.github.com/andycopley/a44654da2ef9cb0da0ceaa8711afcade>. A firmware update can break it.
-> The tool never touches the firmware-update channel (FF03).
+> The tool never touches the firmware-update channel (FF03). Name write, `show` and `now` come from the
+> protocol notes of [picpak-ble](https://github.com/akx/picpak-ble/blob/main/PROTOCOL.md) (MIT). Verified here
+> on firmware V1.1.20: list reply `0x31`, delete reply `0x33`.
 
 ## What the frame is
 
@@ -27,21 +29,46 @@ On macOS, allow Bluetooth for your terminal app the first time (System Settings 
 
 ## Use
 
+Wake the frame (press its button) before each command; it stops advertising when it sleeps.
+`make help` groups the targets into Operations, Build and Support.
+
 ```bash
-picpak scan                         # wake the frame first; lists frames in range
-picpak name 8E1F2C3A-… kitchen      # remember a frame under a name
-picpak identify -f kitchen          # shows "kitchen" on that frame, to check which one is which
-picpak info -f kitchen              # battery, firmware, serial, image count
-picpak preview photo.jpg            # photo.picpak.png: what the frame will show (no Bluetooth)
-picpak push photo.jpg -f kitchen    # dither, upload to the first free slot
-picpak push logo.png -f desk --fit contain --slot 12
-picpak list -f desk                 # occupied slots
-picpak delete 12 -f desk
+make scan                           # frames in range
+uv run picpak name 8E1F2C3A-… kitchen
+make identify FRAME=kitchen         # shows "kitchen" on that frame
+make info                           # battery, firmware, serial, image count
+make list                           # slot · status · date · source, MD5-checked against the records
+make push IMG=photo.jpg             # dither, upload to the first free slot, record it
+make push IMG=logo.png ARGS="--no-dither --fit contain"
+make pull SLOT=1                    # download an unknown image as a preview (30-60 s)
+make delete SLOT=1                  # delete on the frame and forget the record
+make show SLOT=3                    # put a stored picture on the screen
+make now                            # what the screen shows now
+make rename OLD=frame-1 NEW=kitchen ARGS=--on-device   # rename here and on the frame itself
+make dashboard                      # HTML overview of all frames and slots
+make export FILE=picpak.zip         # move the state to another machine…
+make import FILE=picpak.zip         # …and load it there (merge; ARGS=--replace to overwrite)
 ```
 
-Every frame advertises the name `PicPak`, and the serial number can be empty. So frames are remembered by
-their Bluetooth address in `~/.config/picpak/frames.toml`. On macOS that address is a UUID that is stable on
-one Mac but different on another Mac, so the file is per machine and not part of this repo.
+With one named frame `FRAME=` can be left out. `uv run picpak --help` lists every option.
+
+## State (XDG)
+
+The frame stores pixels and an MD5 per slot, nothing else. picpak keeps the rest:
+
+| Where | What |
+|---|---|
+| `$XDG_CONFIG_HOME/picpak/frames.toml` (`~/.config/…`) | frame names → Bluetooth addresses |
+| `$XDG_DATA_HOME/picpak/library.json` (`~/.local/share/…`) | per frame and slot: source file, MD5, fit, dither, when; last seen battery and firmware |
+| `$XDG_DATA_HOME/picpak/previews/<frame>/<slot>.png` | what the frame shows |
+| `$XDG_DATA_HOME/picpak/dashboard.html` | generated overview |
+
+`list` compares each slot's MD5 on the frame with the record: **ok** (matches), **changed** (another image
+is there), **unknown** (not pushed by picpak: `pull` it to see it), **gone** (recorded, no longer on the frame).
+
+Every frame advertises the name `PicPak`, so frames are remembered by Bluetooth address. On macOS that
+address is a UUID that differs per Mac: after `import` on another machine, wake each frame, `scan`, and
+`name` it again. Records and previews follow the name, so nothing else changes.
 
 ## How it works
 
@@ -51,14 +78,23 @@ one Mac but different on another Mac, so the file is per machine and not part of
 | `image.py` | Fit to 400 × 300, Floyd-Steinberg dither to the four colours, pack 2 bits per pixel, flip vertically (the panel scans bottom to top). |
 | `device.py` | Async Bluetooth client on [bleak](https://github.com/hbldh/bleak): connect, subscribe to indications, request/response. |
 | `config.py` | Frame names ↔ addresses. |
+| `library.py` | The state database: records, previews, reconcile with the frame, export/import. |
+| `dashboard.py` | The static HTML overview. |
 | `cli.py` | The `picpak` command. |
+
+## Docs
+
+- [docs/protocol.md](docs/protocol.md): every command, its source, and what is verified on firmware V1.1.20.
+- [docs/prior-art.md](docs/prior-art.md): other PicPak projects; check there before reverse-engineering.
+- `scripts/sniff.py` (`make sniff`): print the frame's raw replies when a command times out on new firmware.
 
 ## Open questions
 
-- How to switch which stored slot is on screen is not documented. A new upload appears to show right away
-  (unverified on our frames).
+- `pull` (reading an image back) is not implemented in current shipping firmware according to picpak-ble;
+  it times out. Kept for future firmware.
+- Whether a name written with `rename --on-device` also changes the advertised Bluetooth name (so `scan` can
+  tell frames apart on any Mac) is not verified yet.
 - What happens when you upload to an occupied slot is unverified, so `push` uses the first free slot by default.
-- The response to *list images* has no documented opcode; the client takes the first long frame on FF01.
 
 ## Develop
 

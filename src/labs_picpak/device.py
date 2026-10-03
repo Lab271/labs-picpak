@@ -94,13 +94,37 @@ class PicPak:
     async def name(self) -> str:
         return p.parse_name(await self._request(p.FF02_CTRL, p.cmd_name(), p.OP_NAME))
 
+    async def set_name(self, name: str) -> None:
+        reply = await self._request(p.FF02_CTRL, p.cmd_set_name(name), p.OP_NAME)
+        if len(reply) < 3 or reply[2] != 0x01:
+            raise RuntimeError(f"frame refused the name: {reply.hex(' ')}")
+
+    async def show(self, slot: int) -> bool:
+        """Put a stored slot on the panel."""
+        _, ok = p.parse_slot_status(
+            await self._request(p.FF01_DATA, p.cmd_show(slot), p.OP_SHOW_REPLY, 15.0), p.OP_SHOW_REPLY
+        )
+        return ok
+
+    async def screen(self) -> p.Screen:
+        return p.parse_screen(await self._request(p.FF01_DATA, p.cmd_screen(), p.OP_SCREEN_REPLY))
+
     async def slots(self) -> list[int]:
-        """Occupied slots. The reply opcode is not documented as 0x30, so accept the first long frame."""
+        """Occupied slots. V1.1.20 replies with opcode 0x31; for other firmware take the first long frame."""
+        q31 = self._queues[p.OP_LIST_REPLY]
+        while not q31.empty():
+            q31.get_nowait()
         await self._client.write_gatt_char(p.FF01_DATA, p.cmd_list(), response=True)
         deadline = asyncio.get_running_loop().time() + 5.0
         while True:
+            if not q31.empty():
+                await asyncio.sleep(CMD_GAP)
+                return p.parse_list(q31.get_nowait())
             for op, q in self._queues.items():
-                if op not in (p.OP_INFO, p.OP_NAME, p.OP_STATUS) and not q.empty():
+                if (
+                    op not in (p.OP_INFO, p.OP_NAME, p.OP_STATUS, p.OP_DATA, 0x02, p.OP_MD5, p.OP_DELETE_REPLY)
+                    and not q.empty()
+                ):
                     frame = q.get_nowait()
                     if len(frame) > 10:
                         await asyncio.sleep(CMD_GAP)
@@ -110,8 +134,25 @@ class PicPak:
             await asyncio.sleep(0.05)
 
     async def delete(self, slot: int) -> bool:
-        _, ok = p.parse_delete(await self._request(p.FF01_DATA, p.cmd_delete(slot), p.OP_DELETE))
-        return ok
+        """Delete a slot. Deleting an empty slot also reports success (seen on V1.1.20)."""
+        replies = (self._queues[p.OP_DELETE_REPLY], self._queues[p.OP_DELETE])
+        for q in replies:
+            while not q.empty():
+                q.get_nowait()
+        await self._client.write_gatt_char(p.FF01_DATA, p.cmd_delete(slot), response=True)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 5.0
+        try:
+            while loop.time() < deadline:
+                for q in replies:
+                    if not q.empty():
+                        got, ok = p.parse_delete(q.get_nowait())
+                        if got == slot:
+                            return ok
+                await asyncio.sleep(0.05)
+            raise TimeoutError(f"no delete confirmation for slot {slot}")
+        finally:
+            await asyncio.sleep(CMD_GAP)
 
     async def upload(self, slot: int, packed: bytes) -> None:
         """Write all chunks with write-response flow control, then commit with the MD5."""
@@ -119,6 +160,48 @@ class PicPak:
             await self._client.write_gatt_char(p.FF01_DATA, pkt, response=True)
         await self._client.write_gatt_char(p.FF01_DATA, p.md5_commit(slot, packed), response=True)
         await asyncio.sleep(UPLOAD_SETTLE)
+
+    async def read_md5(self, slot: int) -> str:
+        """The MD5 the frame stores for a slot (hex). Fast: no image transfer."""
+        q = self._queues[p.OP_MD5]
+        while not q.empty():
+            q.get_nowait()
+        await self._client.write_gatt_char(p.FF01_DATA, p.cmd_read_md5(slot), response=True)
+        deadline = asyncio.get_running_loop().time() + 8.0
+        try:
+            while True:
+                left = deadline - asyncio.get_running_loop().time()
+                if left <= 0:
+                    raise TimeoutError(f"no MD5 for slot {slot}")
+                got, md5 = p.parse_md5(await asyncio.wait_for(q.get(), left))
+                if got == slot:  # replies can arrive late for an earlier slot
+                    return md5.hex()
+        finally:
+            await asyncio.sleep(CMD_GAP)
+
+    async def read_image(self, slot: int, timeout: float = 120.0) -> bytes:
+        """Download a stored image (packed 2 bpp). Slow: 30-60 s per image."""
+        for op in (p.OP_DATA, 0x02):
+            q = self._queues[op]
+            while not q.empty():
+                q.get_nowait()
+        await self._client.write_gatt_char(p.FF01_DATA, p.cmd_read(slot), response=True)
+        parts: dict[int, bytes] = {}
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            for op in (p.OP_DATA, 0x02):
+                q = self._queues[op]
+                while not q.empty():
+                    chunk = p.parse_chunk(q.get_nowait())
+                    if chunk.slot == slot:
+                        parts[chunk.number] = chunk.payload
+                        if chunk.last:
+                            await asyncio.sleep(CMD_GAP)
+                            return b"".join(parts[k] for k in sorted(parts))
+            if loop.time() > deadline:
+                raise TimeoutError(f"slot {slot}: got {len(parts)} chunks, then the frame stopped sending")
+            await asyncio.sleep(0.05)
 
     async def first_free_slot(self) -> int:
         used = set(await self.slots())

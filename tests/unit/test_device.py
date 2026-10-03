@@ -33,20 +33,46 @@ class FakeFrame:
 
     async def write_gatt_char(self, char, data, response=True):
         op = data[1]
-        if char == p.FF02_CTRL and op == p.OP_INFO:
+        if char == p.FF02_CTRL and op == p.OP_NAME and data[2] == 0x00:
+            self.name = bytes(data[4:-1]).decode()
+            self._send(char, bytes([0xAA, 0x06, 0x01, 0xFF]))
+        elif char == p.FF02_CTRL and op == p.OP_NAME:
+            raw = getattr(self, "name", "PicPak").encode()
+            self._send(char, bytes([0xAA, 0x06, 0x01, len(raw)]) + raw + b"\xff")
+        elif op == p.OP_SHOW:
+            slot = data[2] | (data[3] << 8)
+            self.showing = slot
+            self._send(char, bytes([0xAA, 0x37, data[2], data[3], 0 if slot in self.slots else 1, 0xFF]))
+        elif op == p.OP_SCREEN:
+            s = getattr(self, "showing", 0)
+            self._send(char, bytes([0xAA, 0x39, 1, s & 0xFF, s >> 8, 0, 0xFF]))
+        elif char == p.FF02_CTRL and op == p.OP_INFO:
             info = bytearray(57)
             info[0], info[1], info[2], info[-1] = 0xAA, 0x08, 77, 0xFF
             info[15:21] = b"V0.4.1"
             self._send(char, info)
         elif op == p.OP_LIST:
-            occ = [1 if s in self.slots else 0 for s in range(1, 21)]
-            self._send(char, bytes([0xAA, 0x30, *occ, 0xFF]))
+            occ = [1 if s in self.slots else 0 for s in range(1, 501)]
+            self._send(char, bytes([0xAA, 0x31, *occ, 0xFF]))  # V1.1.20 shape
         elif op == p.OP_DELETE:
             slot = data[2] | (data[3] << 8)
             ok = self.slots.pop(slot, None) is not None
-            self._send(char, bytes([0xAA, 0x32, data[2], data[3], 0 if ok else 1, 0xFF]))
+            self._send(char, bytes([0xAA, 0x33, data[2], data[3], 0 if ok else 1, 0xFF]))  # V1.1.20 shape
         elif op == p.OP_DATA:
             self.chunks.append(bytes(data[8:-1]))
+        elif op == p.OP_READ:
+            slot = data[2] | (data[3] << 8)
+            img = self.slots[slot]
+            parts = [img[i : i + 236] for i in range(0, len(img), 236)]
+            for n, part in enumerate(parts):
+                last = 1 if n == len(parts) - 1 else 0
+                self._send(char, bytes([0xAA, 0x02, data[2], data[3], n, last, len(part), 0]) + part + b"\xff")
+        elif op == p.OP_MD5 and len(data) == 6:
+            slot = data[2] | (data[3] << 8)
+            # a late reply for another slot first, then the right one
+            self._send(char, bytes([0xAA, 0x04, 99, 0, 0x02]) + bytes(16) + b"\xff")
+            md5 = hashlib.md5(self.slots[slot]).digest()
+            self._send(char, bytes([0xAA, 0x04, data[2], data[3], 0x02]) + md5 + b"\xff")
         elif op == p.OP_MD5 and len(data) == 22:
             img = b"".join(self.chunks)
             assert data[5:21] == hashlib.md5(img).digest()
@@ -80,6 +106,13 @@ def test_info_slots_upload_delete(fake):
             await frame.upload(free, bytes(30_000))
             client = frame._client
             assert client.slots[2] == bytes(30_000)
+            assert await frame.read_md5(2) == hashlib.md5(bytes(30_000)).hexdigest()
+            assert await frame.read_image(2) == bytes(30_000)
+            await frame.set_name("kitchen")
+            assert await frame.name() == "kitchen"
+            assert await frame.show(2) is True
+            assert (await frame.screen()).slot == 2
+            assert await frame.show(7) is False
             assert await frame.delete(1) is True
             assert await frame.delete(9) is False
 

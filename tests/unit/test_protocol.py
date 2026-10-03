@@ -60,8 +60,31 @@ def test_parse_list_and_delete():
     assert p.parse_list(frame) == [1, 3, 4]
     assert p.parse_delete(bytes.fromhex("aa32050000ff")) == (5, True)
     assert p.parse_delete(bytes.fromhex("aa32050001ff")) == (5, False)
+    assert p.parse_delete(bytes.fromhex("aa33010000ff")) == (1, True)  # captured on V1.1.20
+    v1120_list = bytes([0xAA, 0x31, 0, 1, 1] + [0] * 497 + [0xFF])  # captured shape, 503 bytes
+    assert len(v1120_list) == 503 and p.parse_list(v1120_list) == [2, 3]
 
 
 def test_wrong_opcode_rejected():
     with pytest.raises(p.ProtocolError):
         p.parse_name(bytes.fromhex("aa0801ff"))
+
+
+def test_read_commands_and_parsers():
+    assert p.cmd_read(3) == bytes.fromhex("aa030300ff")
+    md5 = bytes(range(16))
+    slot, got = p.parse_md5(bytes([0xAA, 0x04, 7, 0, 0x02]) + md5 + bytes([0xFF]))
+    assert (slot, got) == (7, md5)
+    c = p.parse_chunk(bytes([0xAA, 0x02, 4, 0, 9, 1, 3, 0, 1, 2, 3, 0xFF]))
+    assert (c.slot, c.number, c.last, c.payload) == (4, 9, True, b"\x01\x02\x03")
+
+
+def test_name_show_and_screen():
+    assert p.cmd_set_name("kitchen") == bytes.fromhex("aa060007") + b"kitchen" + b"\xff"
+    with pytest.raises(ValueError):
+        p.cmd_set_name("")
+    assert p.cmd_show(2) == bytes.fromhex("aa360200ff")
+    assert p.parse_slot_status(bytes.fromhex("aa37020000ff"), p.OP_SHOW_REPLY) == (2, True)
+    assert p.cmd_screen() == bytes.fromhex("aa3802ff")
+    scr = p.parse_screen(bytes.fromhex("aa3901030001ff"))
+    assert (scr.content, scr.slot, scr.idle) == ("stored photo", 3, True)
