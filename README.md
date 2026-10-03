@@ -82,6 +82,12 @@ address is a UUID that differs per Mac: after `import` on another machine, wake 
 | `dashboard.py` | The static HTML overview. |
 | `cli.py` | The `picpak` command. |
 
+## Docs
+
+- [docs/protocol.md](docs/protocol.md): every command, its source, and what is verified on firmware V1.1.20.
+- [docs/prior-art.md](docs/prior-art.md): other PicPak projects; check there before reverse-engineering.
+- `scripts/sniff.py` (`make sniff`): print the frame's raw replies when a command times out on new firmware.
+
 ## Open questions
 
 - `pull` (reading an image back) is not implemented in current shipping firmware according to picpak-ble;

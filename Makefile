@@ -4,7 +4,7 @@ F = $(if $(FRAME),-f $(FRAME),)
 
 .DEFAULT_GOAL := help
 .PHONY: help scan frames info list push delete pull rename show now identify dashboard export import \
-        dev test lint format type check clean
+        dev test lint format type check sniff clean
 
 ##@ Operations (wake the frame first; FRAME=name when you have more than one)
 
@@ -67,7 +67,7 @@ test: ## Run the unit tests with coverage
 	$(UV) run pytest --cov=labs_picpak --cov-report=term-missing
 
 lint: ## Lint with ruff
-	$(UV) run ruff check src tests
+	$(UV) run ruff check src tests scripts
 
 format: ## Format with ruff
 	$(UV) run ruff format src tests
@@ -77,6 +77,10 @@ type: ## Type-check with pyright
 	$(UV) run pyright
 
 ##@ Support
+
+sniff: ## Print the frame's raw replies: FRAME=name CMDS='list "delete 1"'
+	@test -n "$(FRAME)" -a -n "$(CMDS)" || { echo "usage: make sniff FRAME=name CMDS='info list screen'"; exit 1; }
+	$(UV) run python scripts/sniff.py --frame $(FRAME) $(CMDS)
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*?## "} \

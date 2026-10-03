@@ -18,6 +18,9 @@
 - `show SLOT` puts a stored picture on the screen (`aa 36`); `now` reports what the screen shows (`aa 38`).
   Both from the picpak-ble protocol notes (MIT).
 
+- `docs/protocol.md` (commands, sources, what is verified on V1.1.20), `docs/prior-art.md` (other PicPak
+  projects), `scripts/sniff.py` / `make sniff` (raw replies for debugging new firmware).
+
 ### Fixed
 - `delete` timed out after a successful delete on firmware V1.1.20: it replies with opcode 0x33, not 0x32.
   The list reply is 0x31 (503 bytes). Both captured on the device; V0.4.1 opcodes are still accepted.
