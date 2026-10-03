@@ -39,12 +39,12 @@ class FakeFrame:
             info[15:21] = b"V0.4.1"
             self._send(char, info)
         elif op == p.OP_LIST:
-            occ = [1 if s in self.slots else 0 for s in range(1, 21)]
-            self._send(char, bytes([0xAA, 0x30, *occ, 0xFF]))
+            occ = [1 if s in self.slots else 0 for s in range(1, 501)]
+            self._send(char, bytes([0xAA, 0x31, *occ, 0xFF]))  # V1.1.20 shape
         elif op == p.OP_DELETE:
             slot = data[2] | (data[3] << 8)
             ok = self.slots.pop(slot, None) is not None
-            self._send(char, bytes([0xAA, 0x32, data[2], data[3], 0 if ok else 1, 0xFF]))
+            self._send(char, bytes([0xAA, 0x33, data[2], data[3], 0 if ok else 1, 0xFF]))  # V1.1.20 shape
         elif op == p.OP_DATA:
             self.chunks.append(bytes(data[8:-1]))
         elif op == p.OP_READ:

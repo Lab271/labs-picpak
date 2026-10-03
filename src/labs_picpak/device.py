@@ -95,12 +95,21 @@ class PicPak:
         return p.parse_name(await self._request(p.FF02_CTRL, p.cmd_name(), p.OP_NAME))
 
     async def slots(self) -> list[int]:
-        """Occupied slots. The reply opcode is not documented as 0x30, so accept the first long frame."""
+        """Occupied slots. V1.1.20 replies with opcode 0x31; for other firmware take the first long frame."""
+        q31 = self._queues[p.OP_LIST_REPLY]
+        while not q31.empty():
+            q31.get_nowait()
         await self._client.write_gatt_char(p.FF01_DATA, p.cmd_list(), response=True)
         deadline = asyncio.get_running_loop().time() + 5.0
         while True:
+            if not q31.empty():
+                await asyncio.sleep(CMD_GAP)
+                return p.parse_list(q31.get_nowait())
             for op, q in self._queues.items():
-                if op not in (p.OP_INFO, p.OP_NAME, p.OP_STATUS, p.OP_DATA, 0x02, p.OP_MD5) and not q.empty():
+                if (
+                    op not in (p.OP_INFO, p.OP_NAME, p.OP_STATUS, p.OP_DATA, 0x02, p.OP_MD5, p.OP_DELETE_REPLY)
+                    and not q.empty()
+                ):
                     frame = q.get_nowait()
                     if len(frame) > 10:
                         await asyncio.sleep(CMD_GAP)
@@ -110,8 +119,25 @@ class PicPak:
             await asyncio.sleep(0.05)
 
     async def delete(self, slot: int) -> bool:
-        _, ok = p.parse_delete(await self._request(p.FF01_DATA, p.cmd_delete(slot), p.OP_DELETE))
-        return ok
+        """Delete a slot. Deleting an empty slot also reports success (seen on V1.1.20)."""
+        replies = (self._queues[p.OP_DELETE_REPLY], self._queues[p.OP_DELETE])
+        for q in replies:
+            while not q.empty():
+                q.get_nowait()
+        await self._client.write_gatt_char(p.FF01_DATA, p.cmd_delete(slot), response=True)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 5.0
+        try:
+            while loop.time() < deadline:
+                for q in replies:
+                    if not q.empty():
+                        got, ok = p.parse_delete(q.get_nowait())
+                        if got == slot:
+                            return ok
+                await asyncio.sleep(0.05)
+            raise TimeoutError(f"no delete confirmation for slot {slot}")
+        finally:
+            await asyncio.sleep(CMD_GAP)
 
     async def upload(self, slot: int, packed: bytes) -> None:
         """Write all chunks with write-response flow control, then commit with the MD5."""

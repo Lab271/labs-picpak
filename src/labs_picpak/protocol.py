@@ -27,7 +27,9 @@ OP_NAME = 0x06
 OP_STATUS = 0x07
 OP_INFO = 0x08
 OP_LIST = 0x30
+OP_LIST_REPLY = 0x31  # seen on firmware V1.1.20: aa 31 <500 slot bytes> ff
 OP_DELETE = 0x32
+OP_DELETE_REPLY = 0x33  # seen on firmware V1.1.20: aa 33 <slot lo> <slot hi> <result> ff
 
 
 class ProtocolError(ValueError):
@@ -132,8 +134,11 @@ def parse_list(frame: bytes | bytearray) -> list[int]:
 
 
 def parse_delete(frame: bytes | bytearray) -> tuple[int, bool]:
-    """(slot, success) from a delete response."""
-    _check(frame, OP_DELETE, min_len=6)
+    """(slot, success) from a delete response (0x33 on V1.1.20; 0x32 as documented for V0.4.1)."""
+    if len(frame) >= 6 and frame[1] == OP_DELETE:
+        _check(frame, OP_DELETE, min_len=6)
+    else:
+        _check(frame, OP_DELETE_REPLY, min_len=6)
     return frame[2] | (frame[3] << 8), frame[4] == 0x00
 
 

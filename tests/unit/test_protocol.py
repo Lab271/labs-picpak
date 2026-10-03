@@ -60,6 +60,9 @@ def test_parse_list_and_delete():
     assert p.parse_list(frame) == [1, 3, 4]
     assert p.parse_delete(bytes.fromhex("aa32050000ff")) == (5, True)
     assert p.parse_delete(bytes.fromhex("aa32050001ff")) == (5, False)
+    assert p.parse_delete(bytes.fromhex("aa33010000ff")) == (1, True)  # captured on V1.1.20
+    v1120_list = bytes([0xAA, 0x31, 0, 1, 1] + [0] * 497 + [0xFF])  # captured shape, 503 bytes
+    assert len(v1120_list) == 503 and p.parse_list(v1120_list) == [2, 3]
 
 
 def test_wrong_opcode_rejected():
