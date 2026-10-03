@@ -149,6 +149,14 @@ def cmd_name(args: argparse.Namespace) -> None:
     print(f"{args.name} = {args.address}  ({config.save(frames)})")
 
 
+def cmd_rename(args: argparse.Namespace) -> None:
+    try:
+        library.rename(args.old, args.new)
+    except ValueError as e:
+        sys.exit(str(e))
+    print(f"{args.old} -> {args.new} (name, records and previews)")
+
+
 def cmd_frames(_args: argparse.Namespace) -> None:
     frames = config.load()
     if not frames:
@@ -222,6 +230,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("address")
     s.add_argument("name")
     s.set_defaults(func=cmd_name)
+    s = sub.add_parser("rename", help="rename a frame (or name one known only by address), keeping its records")
+    s.add_argument("old")
+    s.add_argument("new")
+    s.set_defaults(func=cmd_rename)
     sub.add_parser("frames", help="named frames and where the state lives").set_defaults(func=cmd_frames)
     return ap
 

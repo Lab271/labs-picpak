@@ -144,6 +144,30 @@ def reconcile(frame: str, address: str, used: list[int], md5s: dict[int, str]) -
     return fs
 
 
+def rename(old: str, new: str) -> None:
+    """Rename a frame everywhere: config name, library records and preview folder.
+
+    ``old`` may be a name or an address (records made before the frame was named are keyed by address).
+    """
+    cfg = config.load()
+    if new in cfg:
+        raise ValueError(f"{new!r} is already a frame name")
+    address = cfg.pop(old, old)
+    cfg[new] = address
+    config.save(cfg)
+    frames = load()
+    for key in (old, address):
+        if key in frames:
+            fs = frames.pop(key)
+            frames.setdefault(new, fs)
+            src = data_dir() / "previews" / key
+            if src.exists():
+                dst = data_dir() / "previews" / new
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                src.rename(dst)
+    save(frames)
+
+
 # ---- migration -------------------------------------------------------------------
 
 def export(path: str | Path) -> Path:

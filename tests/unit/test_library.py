@@ -80,3 +80,16 @@ def test_dashboard_lists_frames_slots_and_status(xdg):
     assert "kitchen" in html and "dokyo.png" in html
     assert "previews/kitchen/2.png" in html
     assert "not recorded" in html  # slot 1
+
+
+def test_rename_moves_name_records_and_previews(xdg):
+    config.save({"frame-1": "ADDR-1"})
+    library.record("frame-1", "ADDR-1", entry(2), Image.new("RGB", (400, 300)))
+    library.record("ADDR-2", "ADDR-2", entry(3), Image.new("RGB", (400, 300)))  # pushed before naming
+    library.rename("frame-1", "kitchen")
+    library.rename("ADDR-2", "desk")
+    assert config.load() == {"kitchen": "ADDR-1", "desk": "ADDR-2"}
+    assert set(library.load()) == {"kitchen", "desk"}
+    assert library.preview_path("kitchen", 2).exists() and library.preview_path("desk", 3).exists()
+    with pytest.raises(ValueError):
+        library.rename("kitchen", "desk")
