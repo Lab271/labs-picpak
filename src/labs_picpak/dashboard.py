@@ -32,33 +32,45 @@ section{margin-top:32px}h2{font-size:20px;margin:0 0 4px}
 
 def render() -> Path:
     frames = library.load()
-    parts = [f"<!doctype html><meta charset=utf-8><title>picpak</title><style>{CSS}</style>",
-             "<h1>picpak</h1>",
-             f'<div class="meta">generated {html.escape(library.now())} \\ {len(frames)} frame(s)</div>']
+    parts = [
+        f"<!doctype html><meta charset=utf-8><title>picpak</title><style>{CSS}</style>",
+        "<h1>picpak</h1>",
+        f'<div class="meta">generated {html.escape(library.now())} \\ {len(frames)} frame(s)</div>',
+    ]
     for name, fs in sorted(frames.items()):
         slots = sorted(set(fs.on_frame) | set(fs.slots))
-        info = " \\ ".join(x for x in [
-            f"battery {fs.battery}%" if fs.battery is not None else "",
-            f"firmware {fs.firmware}" if fs.firmware else "",
-            f"serial {fs.serial}" if fs.serial else "",
-            f"last seen {fs.seen_at}" if fs.seen_at else "never listed",
-        ] if x)
-        parts.append(f"<section><h2>{html.escape(name)}</h2><div class=meta>{html.escape(info)}<br>"
-                     f"<code>{html.escape(fs.address)}</code></div><div class=grid>")
+        info = " \\ ".join(
+            x
+            for x in [
+                f"battery {fs.battery}%" if fs.battery is not None else "",
+                f"firmware {fs.firmware}" if fs.firmware else "",
+                f"serial {fs.serial}" if fs.serial else "",
+                f"last seen {fs.seen_at}" if fs.seen_at else "never listed",
+            ]
+            if x
+        )
+        parts.append(
+            f"<section><h2>{html.escape(name)}</h2><div class=meta>{html.escape(info)}<br>"
+            f"<code>{html.escape(fs.address)}</code></div><div class=grid>"
+        )
         for s in slots:
             e = fs.slots.get(s)
             st = fs.status.get(s, "ok" if e else "unknown")
             prev = library.preview_path(name, s)
-            img = (f'<img src="{prev.relative_to(library.data_dir()).as_posix()}" alt="slot {s}">'
-                   if prev.exists() else '<div class="noimg">no preview</div>')
+            img = (
+                f'<img src="{prev.relative_to(library.data_dir()).as_posix()}" alt="slot {s}">'
+                if prev.exists()
+                else '<div class="noimg">no preview</div>'
+            )
             src = html.escape(Path(e.source).name) if e else "?"
             when = html.escape(e.pushed_at) if e else ""
             how = (f"{e.fit or '-'} \\ {'dither' if e.dither else 'no dither'} \\ {e.origin}") if e else ""
             parts.append(
-                f'<div class=card>{img}<div class=body><span class=slot>slot {s}</span> '
+                f"<div class=card>{img}<div class=body><span class=slot>slot {s}</span> "
                 f'<span class="k {st}">\\ {html.escape(STATUS_TEXT.get(st, st))}</span>'
-                f'<div class=src>{src}</div><div class=k>{when}</div><div class=k>{html.escape(how)}</div>'
-                "</div></div>")
+                f"<div class=src>{src}</div><div class=k>{when}</div><div class=k>{html.escape(how)}</div>"
+                "</div></div>"
+            )
         parts.append("</div></section>")
     out = library.data_dir() / "dashboard.html"
     out.parent.mkdir(parents=True, exist_ok=True)

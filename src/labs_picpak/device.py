@@ -94,6 +94,21 @@ class PicPak:
     async def name(self) -> str:
         return p.parse_name(await self._request(p.FF02_CTRL, p.cmd_name(), p.OP_NAME))
 
+    async def set_name(self, name: str) -> None:
+        reply = await self._request(p.FF02_CTRL, p.cmd_set_name(name), p.OP_NAME)
+        if len(reply) < 3 or reply[2] != 0x01:
+            raise RuntimeError(f"frame refused the name: {reply.hex(' ')}")
+
+    async def show(self, slot: int) -> bool:
+        """Put a stored slot on the panel."""
+        _, ok = p.parse_slot_status(
+            await self._request(p.FF01_DATA, p.cmd_show(slot), p.OP_SHOW_REPLY, 15.0), p.OP_SHOW_REPLY
+        )
+        return ok
+
+    async def screen(self) -> p.Screen:
+        return p.parse_screen(await self._request(p.FF01_DATA, p.cmd_screen(), p.OP_SCREEN_REPLY))
+
     async def slots(self) -> list[int]:
         """Occupied slots. V1.1.20 replies with opcode 0x31; for other firmware take the first long frame."""
         q31 = self._queues[p.OP_LIST_REPLY]

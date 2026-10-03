@@ -5,7 +5,9 @@ The Lab271 PicPak drive: control [PicPak](https://www.picpak.tech) colour e-ink 
 > **Unofficial.** Lab271 is not affiliated with the maker of PicPak. This tool is built on a
 > reverse-engineered description of the Bluetooth protocol (firmware V0.4.1) by Andy Copley:
 > <https://gist.github.com/andycopley/a44654da2ef9cb0da0ceaa8711afcade>. A firmware update can break it.
-> The tool never touches the firmware-update channel (FF03).
+> The tool never touches the firmware-update channel (FF03). Name write, `show` and `now` come from the
+> protocol notes of [picpak-ble](https://github.com/akx/picpak-ble/blob/main/PROTOCOL.md) (MIT). Verified here
+> on firmware V1.1.20: list reply `0x31`, delete reply `0x33`.
 
 ## What the frame is
 
@@ -40,6 +42,9 @@ make push IMG=photo.jpg             # dither, upload to the first free slot, rec
 make push IMG=logo.png ARGS="--no-dither --fit contain"
 make pull SLOT=1                    # download an unknown image as a preview (30-60 s)
 make delete SLOT=1                  # delete on the frame and forget the record
+make show SLOT=3                    # put a stored picture on the screen
+make now                            # what the screen shows now
+make rename OLD=frame-1 NEW=kitchen ARGS=--on-device   # rename here and on the frame itself
 make dashboard                      # HTML overview of all frames and slots
 make export FILE=picpak.zip         # move the state to another machine…
 make import FILE=picpak.zip         # …and load it there (merge; ARGS=--replace to overwrite)
@@ -79,10 +84,11 @@ address is a UUID that differs per Mac: after `import` on another machine, wake 
 
 ## Open questions
 
-- How to switch which stored slot is on screen is not documented. A new upload appears to show right away
-  (unverified on our frames).
+- `pull` (reading an image back) is not implemented in current shipping firmware according to picpak-ble;
+  it times out. Kept for future firmware.
+- Whether a name written with `rename --on-device` also changes the advertised Bluetooth name (so `scan` can
+  tell frames apart on any Mac) is not verified yet.
 - What happens when you upload to an occupied slot is unverified, so `push` uses the first free slot by default.
-- The response to *list images* has no documented opcode; the client takes the first long frame on FF01.
 
 ## Develop
 

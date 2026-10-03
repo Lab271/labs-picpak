@@ -3,7 +3,7 @@ FRAME ?=
 F = $(if $(FRAME),-f $(FRAME),)
 
 .DEFAULT_GOAL := help
-.PHONY: help scan frames info list push delete pull rename identify dashboard export import \
+.PHONY: help scan frames info list push delete pull rename show now identify dashboard export import \
         dev test lint format type check clean
 
 ##@ Operations (wake the frame first; FRAME=name when you have more than one)
@@ -28,13 +28,20 @@ delete: ## Delete a slot on the frame and its record: SLOT=n
 	@test -n "$(SLOT)" || { echo "usage: make delete SLOT=n [FRAME=name]"; exit 1; }
 	$(UV) run picpak delete $(SLOT) $(F)
 
-pull: ## Download a stored image as preview (30-60 s): SLOT=n
+pull: ## Download a stored image (not in shipping firmware yet): SLOT=n
 	@test -n "$(SLOT)" || { echo "usage: make pull SLOT=n [FRAME=name]"; exit 1; }
 	$(UV) run picpak pull $(SLOT) $(F)
 
-rename: ## Rename a frame, keeping its records: OLD=name|address NEW=name
-	@test -n "$(OLD)" -a -n "$(NEW)" || { echo "usage: make rename OLD=name NEW=name"; exit 1; }
-	$(UV) run picpak rename "$(OLD)" "$(NEW)"
+rename: ## Rename a frame, keeping its records: OLD=name NEW=name [ARGS=--on-device]
+	@test -n "$(OLD)" -a -n "$(NEW)" || { echo "usage: make rename OLD=name NEW=name [ARGS=--on-device]"; exit 1; }
+	$(UV) run picpak rename "$(OLD)" "$(NEW)" $(ARGS)
+
+show: ## Put a stored slot on the screen: SLOT=n
+	@test -n "$(SLOT)" || { echo "usage: make show SLOT=n [FRAME=name]"; exit 1; }
+	$(UV) run picpak show $(SLOT) $(F)
+
+now: ## What the screen shows now
+	$(UV) run picpak now $(F)
 
 identify: ## Show the frame's name on its screen
 	$(UV) run picpak identify $(F)

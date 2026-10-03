@@ -170,6 +170,7 @@ def rename(old: str, new: str) -> None:
 
 # ---- migration -------------------------------------------------------------------
 
+
 def export(path: str | Path) -> Path:
     """Zip config (frame names) and data (library, previews) into one file."""
     path = Path(path)

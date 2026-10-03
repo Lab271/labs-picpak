@@ -26,8 +26,24 @@ def test_preview_needs_no_bluetooth(tmp_path):
 
 def test_parser_has_all_commands():
     names = set(cli.build_parser()._subparsers._group_actions[0].choices)  # type: ignore[union-attr]
-    assert {"scan", "info", "list", "push", "delete", "pull", "identify", "preview", "dashboard",
-            "export", "import", "name", "frames"} <= names
+    assert {
+        "scan",
+        "info",
+        "list",
+        "push",
+        "delete",
+        "pull",
+        "identify",
+        "preview",
+        "dashboard",
+        "export",
+        "import",
+        "name",
+        "frames",
+        "rename",
+        "show",
+        "now",
+    } <= names
 
 
 def test_export_import_and_dashboard_commands(tmp_path, monkeypatch, capsys):

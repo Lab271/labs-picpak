@@ -14,6 +14,9 @@
 - `info` stores battery, firmware and serial for the dashboard.
 - Make targets for all frame operations, and `make help` grouped into Operations, Build and Support.
 - `rename OLD NEW` (`make rename`): rename a frame, or name one known only by address, keeping records and previews.
+  `--on-device` also writes the name to the frame (`aa 06 00 <len> <name> ff`).
+- `show SLOT` puts a stored picture on the screen (`aa 36`); `now` reports what the screen shows (`aa 38`).
+  Both from the picpak-ble protocol notes (MIT).
 
 ### Fixed
 - `delete` timed out after a successful delete on firmware V1.1.20: it replies with opcode 0x33, not 0x32.

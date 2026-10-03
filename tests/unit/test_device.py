@@ -33,7 +33,20 @@ class FakeFrame:
 
     async def write_gatt_char(self, char, data, response=True):
         op = data[1]
-        if char == p.FF02_CTRL and op == p.OP_INFO:
+        if char == p.FF02_CTRL and op == p.OP_NAME and data[2] == 0x00:
+            self.name = bytes(data[4:-1]).decode()
+            self._send(char, bytes([0xAA, 0x06, 0x01, 0xFF]))
+        elif char == p.FF02_CTRL and op == p.OP_NAME:
+            raw = getattr(self, "name", "PicPak").encode()
+            self._send(char, bytes([0xAA, 0x06, 0x01, len(raw)]) + raw + b"\xff")
+        elif op == p.OP_SHOW:
+            slot = data[2] | (data[3] << 8)
+            self.showing = slot
+            self._send(char, bytes([0xAA, 0x37, data[2], data[3], 0 if slot in self.slots else 1, 0xFF]))
+        elif op == p.OP_SCREEN:
+            s = getattr(self, "showing", 0)
+            self._send(char, bytes([0xAA, 0x39, 1, s & 0xFF, s >> 8, 0, 0xFF]))
+        elif char == p.FF02_CTRL and op == p.OP_INFO:
             info = bytearray(57)
             info[0], info[1], info[2], info[-1] = 0xAA, 0x08, 77, 0xFF
             info[15:21] = b"V0.4.1"
@@ -95,6 +108,11 @@ def test_info_slots_upload_delete(fake):
             assert client.slots[2] == bytes(30_000)
             assert await frame.read_md5(2) == hashlib.md5(bytes(30_000)).hexdigest()
             assert await frame.read_image(2) == bytes(30_000)
+            await frame.set_name("kitchen")
+            assert await frame.name() == "kitchen"
+            assert await frame.show(2) is True
+            assert (await frame.screen()).slot == 2
+            assert await frame.show(7) is False
             assert await frame.delete(1) is True
             assert await frame.delete(9) is False
 

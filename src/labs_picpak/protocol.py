@@ -2,6 +2,8 @@
 
 Based on the reverse-engineered protocol for firmware V0.4.1:
 https://gist.github.com/andycopley/a44654da2ef9cb0da0ceaa8711afcade
+and the protocol notes of picpak-ble (MIT), which add name write, display and display status:
+https://github.com/akx/picpak-ble/blob/main/PROTOCOL.md
 
 Every message is ``0xAA <opcode> <payload> 0xFF``. Slots are 1-indexed, 16-bit little-endian.
 """
@@ -30,6 +32,18 @@ OP_LIST = 0x30
 OP_LIST_REPLY = 0x31  # seen on firmware V1.1.20: aa 31 <500 slot bytes> ff
 OP_DELETE = 0x32
 OP_DELETE_REPLY = 0x33  # seen on firmware V1.1.20: aa 33 <slot lo> <slot hi> <result> ff
+OP_SHOW = 0x36  # display a stored slot (picpak-ble)
+OP_SHOW_REPLY = 0x37
+OP_SCREEN = 0x38  # what is on the panel now (picpak-ble)
+OP_SCREEN_REPLY = 0x39
+SCREEN_CONTENT = {
+    0: "unknown",
+    1: "stored photo",
+    2: "built-in image",
+    3: "raw image",
+    4: "low-battery screen",
+    5: "blank screen",
+}
 
 
 class ProtocolError(ValueError):
@@ -49,6 +63,7 @@ def _check(frame: bytes | bytearray, opcode: int, min_len: int = 3) -> None:
 
 # ---- commands (client -> device) -------------------------------------------------
 
+
 def cmd_name() -> bytes:
     return bytes([SOF, OP_NAME, 0x02, EOF])
 
@@ -59,6 +74,22 @@ def cmd_status() -> bytes:
 
 def cmd_info() -> bytes:
     return bytes([SOF, OP_INFO, 0x02, EOF])
+
+
+def cmd_set_name(name: str) -> bytes:
+    """Write the device name (UTF-8, at most 255 bytes). The frame confirms with aa 06 01 ... ff."""
+    raw = name.encode("utf-8")
+    if not raw or len(raw) > 255:
+        raise ValueError("device name must be 1..255 UTF-8 bytes")
+    return bytes([SOF, OP_NAME, 0x00, len(raw)]) + raw + bytes([EOF])
+
+
+def cmd_show(slot: int) -> bytes:
+    return bytes([SOF, OP_SHOW]) + _slot(slot) + bytes([EOF])
+
+
+def cmd_screen() -> bytes:
+    return bytes([SOF, OP_SCREEN, 0x02, EOF])
 
 
 def cmd_list() -> bytes:
@@ -87,8 +118,10 @@ def data_packets(slot: int, packed: bytes) -> list[bytes]:
     out = []
     for n, payload in enumerate(chunks):
         last = n == len(chunks) - 1
-        header = bytes([SOF, OP_DATA]) + _slot(slot) + bytes(
-            [n, 0x01 if last else 0x00, len(payload) & 0xFF, (len(payload) >> 8) & 0xFF]
+        header = (
+            bytes([SOF, OP_DATA])
+            + _slot(slot)
+            + bytes([n, 0x01 if last else 0x00, len(payload) & 0xFF, (len(payload) >> 8) & 0xFF])
         )
         out.append(header + payload + bytes([EOF]))
     return out
@@ -100,6 +133,7 @@ def md5_commit(slot: int, packed: bytes, flag: int = 0x00) -> bytes:
 
 
 # ---- responses (device -> client) ------------------------------------------------
+
 
 @dataclass(frozen=True)
 class DeviceInfo:
@@ -162,3 +196,23 @@ def parse_chunk(frame: bytes | bytearray) -> Chunk:
         raise ProtocolError(f"bad data packet: {bytes(frame[:8]).hex(' ')}…")
     n = frame[6] | (frame[7] << 8)
     return Chunk(frame[2] | (frame[3] << 8), frame[4], frame[5] == 0x01, bytes(frame[8 : 8 + n]))
+
+
+def parse_slot_status(frame: bytes | bytearray, opcode: int) -> tuple[int, bool]:
+    """(slot, success) from a reply shaped aa <op> <slot:u16> <status> ... ff (status 0 = success)."""
+    _check(frame, opcode, min_len=6)
+    return frame[2] | (frame[3] << 8), frame[4] == 0x00
+
+
+@dataclass(frozen=True)
+class Screen:
+    content: str
+    slot: int
+    idle: bool
+
+
+def parse_screen(frame: bytes | bytearray) -> Screen:
+    """What the panel shows: content type, active slot, idle flag. The slot is the last selected
+    one and is not proof the slot still holds an image (picpak-ble)."""
+    _check(frame, OP_SCREEN_REPLY, min_len=7)
+    return Screen(SCREEN_CONTENT.get(frame[2], f"type {frame[2]}"), frame[3] | (frame[4] << 8), bool(frame[5] & 1))

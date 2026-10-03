@@ -77,3 +77,14 @@ def test_read_commands_and_parsers():
     assert (slot, got) == (7, md5)
     c = p.parse_chunk(bytes([0xAA, 0x02, 4, 0, 9, 1, 3, 0, 1, 2, 3, 0xFF]))
     assert (c.slot, c.number, c.last, c.payload) == (4, 9, True, b"\x01\x02\x03")
+
+
+def test_name_show_and_screen():
+    assert p.cmd_set_name("kitchen") == bytes.fromhex("aa060007") + b"kitchen" + b"\xff"
+    with pytest.raises(ValueError):
+        p.cmd_set_name("")
+    assert p.cmd_show(2) == bytes.fromhex("aa360200ff")
+    assert p.parse_slot_status(bytes.fromhex("aa37020000ff"), p.OP_SHOW_REPLY) == (2, True)
+    assert p.cmd_screen() == bytes.fromhex("aa3802ff")
+    scr = p.parse_screen(bytes.fromhex("aa3901030001ff"))
+    assert (scr.content, scr.slot, scr.idle) == ("stored photo", 3, True)

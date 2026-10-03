@@ -71,9 +71,19 @@ async def cmd_push(args: argparse.Namespace) -> None:
     async with PicPak(address) as frame:
         slot = args.slot or await frame.first_free_slot()
         await frame.upload(slot, packed)
-    library.record(name, address, library.Entry(
-        slot=slot, source=str(Path(args.image).resolve()), md5=hashlib.md5(packed).hexdigest(),
-        fit=args.fit, dither=not args.no_dither, pushed_at=library.now()), preview)
+    library.record(
+        name,
+        address,
+        library.Entry(
+            slot=slot,
+            source=str(Path(args.image).resolve()),
+            md5=hashlib.md5(packed).hexdigest(),
+            fit=args.fit,
+            dither=not args.no_dither,
+            pushed_at=library.now(),
+        ),
+        preview,
+    )
     print(f"pushed {args.image} to {name} slot {slot}")
     if args.save_preview:
         preview.save(args.save_preview)
@@ -96,8 +106,9 @@ async def cmd_pull(args: argparse.Namespace) -> None:
         packed = await frame.read_image(args.slot)
     preview = img.to_image(img.unpack(packed))
     known = library.load().get(name, library.FrameState()).slots.get(args.slot)
-    entry = known or library.Entry(slot=args.slot, source="(on frame, source unknown)",
-                                   md5=hashlib.md5(packed).hexdigest(), origin="pull")
+    entry = known or library.Entry(
+        slot=args.slot, source="(on frame, source unknown)", md5=hashlib.md5(packed).hexdigest(), origin="pull"
+    )
     library.record(name, address, entry, preview)
     if args.out:
         preview.save(args.out)
@@ -113,9 +124,19 @@ async def cmd_identify(args: argparse.Namespace) -> None:
     async with PicPak(address) as frame:
         slot = await frame.first_free_slot()
         await frame.upload(slot, packed)
-    library.record(name, address, library.Entry(
-        slot=slot, source=f"identify: {label}", md5=hashlib.md5(packed).hexdigest(), fit="contain",
-        pushed_at=library.now(), origin="identify"), preview)
+    library.record(
+        name,
+        address,
+        library.Entry(
+            slot=slot,
+            source=f"identify: {label}",
+            md5=hashlib.md5(packed).hexdigest(),
+            fit="contain",
+            pushed_at=library.now(),
+            origin="identify",
+        ),
+        preview,
+    )
     print(f"'{label}' shown, stored in slot {slot}")
 
 
@@ -149,12 +170,34 @@ def cmd_name(args: argparse.Namespace) -> None:
     print(f"{args.name} = {args.address}  ({config.save(frames)})")
 
 
-def cmd_rename(args: argparse.Namespace) -> None:
+async def cmd_rename(args: argparse.Namespace) -> None:
+    if args.on_device:
+        address = config.resolve(args.old)
+        async with PicPak(address) as frame:
+            await frame.set_name(args.new)
+            on_device = await frame.name()
+        print(f"device name now {on_device!r}")
     try:
         library.rename(args.old, args.new)
     except ValueError as e:
         sys.exit(str(e))
     print(f"{args.old} -> {args.new} (name, records and previews)")
+
+
+async def cmd_show(args: argparse.Namespace) -> None:
+    name, address = _target(args)
+    async with PicPak(address) as frame:
+        ok = await frame.show(args.slot)
+    print(f"{name}: slot {args.slot} {'on screen' if ok else 'could not be shown (empty slot?)'}")
+
+
+async def cmd_now(args: argparse.Namespace) -> None:
+    name, address = _target(args)
+    async with PicPak(address) as frame:
+        scr = await frame.screen()
+    e = library.load().get(name, library.FrameState()).slots.get(scr.slot)
+    src = f"  {Path(e.source).name}" if e and scr.content == "stored photo" else ""
+    print(f"{name}: {scr.content}, slot {scr.slot}{src}{'  (idle)' if scr.idle else ''}")
 
 
 def cmd_frames(_args: argparse.Namespace) -> None:
@@ -200,14 +243,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--local-only", action="store_true", help="forget the record, leave the frame alone")
     s.set_defaults(func=cmd_delete)
 
-    s = with_frame(sub.add_parser("pull", help="download a stored image as a preview (slow)"))
+    s = with_frame(sub.add_parser("pull", help="download a stored image (not implemented in shipping firmware)"))
     s.add_argument("slot", type=int)
     s.add_argument("--out", help="also save as this PNG")
     s.set_defaults(func=cmd_pull)
 
-    with_frame(sub.add_parser("identify", help="show the frame's name on its screen")).set_defaults(
-        func=cmd_identify
-    )
+    with_frame(sub.add_parser("identify", help="show the frame's name on its screen")).set_defaults(func=cmd_identify)
 
     s = with_render(sub.add_parser("preview", help="render an image as the frame would show it (no Bluetooth)"))
     s.add_argument("image")
@@ -233,7 +274,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("rename", help="rename a frame (or name one known only by address), keeping its records")
     s.add_argument("old")
     s.add_argument("new")
+    s.add_argument("--on-device", action="store_true", help="also write the name to the frame itself (wake it)")
     s.set_defaults(func=cmd_rename)
+
+    s = with_frame(sub.add_parser("show", help="put a stored slot on the screen"))
+    s.add_argument("slot", type=int)
+    s.set_defaults(func=cmd_show)
+    with_frame(sub.add_parser("now", help="what the screen shows now")).set_defaults(func=cmd_now)
     sub.add_parser("frames", help="named frames and where the state lives").set_defaults(func=cmd_frames)
     return ap
 
